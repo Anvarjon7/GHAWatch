@@ -32,8 +32,8 @@ public class WorkflowEvent {
         return repo;
     }
 
-    public Optional<Long> getRunId() {
-        return Optional.ofNullable(runId);
+    public long getRunId() {
+        return runId;
     }
 
     public Optional<Long> getJobId() {
