@@ -46,12 +46,12 @@
             <version>${jackson.version}</version>
         </dependency>
 
-            <dependency>
-                <groupId>org.projectlombok</groupId>
-                <artifactId>lombok</artifactId>
-                <version>1.18.42</version>
-                <scope>provided</scope>
-            </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>1.18.42</version>
+            <scope>provided</scope>
+        </dependency>
 
         <dependency>
             <groupId>com.fasterxml.jackson.datatype</groupId>
@@ -104,6 +104,7 @@
                     </execution>
                 </executions>
             </plugin>
+
 
             <!-- Java Compiler -->
             <plugin>
