@@ -13,5 +13,5 @@ import lombok.Setter;
 public class MonitorState {
 
     @JsonProperty("last_processed_run_id")
-    private Long lastProcessedRunId;
+    private long lastProcessedRunId;
 }

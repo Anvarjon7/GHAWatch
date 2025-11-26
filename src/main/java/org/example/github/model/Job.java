@@ -9,7 +9,7 @@ import java.util.List;
 @Getter
 public class Job {
 
-    private Long id;
+    private long id;
     private String name;
     private String status;
     private String conclusion;

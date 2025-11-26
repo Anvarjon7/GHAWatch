@@ -6,7 +6,7 @@ import lombok.Getter;
 @Getter
 public class WorkflowRun {
 
-    private Long id;
+    private long id;
 
     @JsonProperty("head_branch")
     private String headBranch;
