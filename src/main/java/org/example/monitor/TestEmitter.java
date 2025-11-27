@@ -10,15 +10,15 @@ public class TestEmitter {
 
         WorkflowEvent event = new WorkflowEvent(
                 OffsetDateTime.now(),
-                EventType.JOB_STARTED,
-                "myorg/repo",
-                12324L,
-                34343L,
-                2,
+                EventType.JOB_COMPLETED,
+                "testorg/testrepo",
+                24L,
+                343L,
+                null,
                 "main",
-                "abc1234",
-                "in_progress",
-                "Job 'build' started"
+                "abc123",
+                "success",
+                "Job 'build' completed"
         );
 
         eventEmitter.emit(event);

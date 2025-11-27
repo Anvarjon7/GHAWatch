@@ -9,33 +9,46 @@ public class EventEmitter {
 
     public synchronized void emit(WorkflowEvent event){
 
-        String ts = ISO.format(event.getTimeStamp());
-
         StringJoiner sj = new StringJoiner(" | ");
-        sj.add(ts);
+
+        sj.add(ISO.format(event.getTimeStamp()));
+
         sj.add(event.getEventType().name());
-        sj.add("repo=" + event.getRepo());
+
         sj.add("run=" + event.getRunId());
 
-        event.getJobId().ifPresent(j -> sj.add("job=" + j));
-        if (!event.getJobId().isPresent()) sj.add("job=-");
+        event.getJobId().ifPresentOrElse(
+                id -> sj.add("job=" + id),
+                () -> sj.add("job=-")
+        );
 
-        event.getStepNumber().ifPresent(s -> sj.add("step="+s));
-        if (!event.getStepNumber().isPresent()) sj.add("step=-");
+        event.getStepNumber().ifPresentOrElse(
+                step -> sj.add("step=" +step),
+                () -> sj.add("step=-")
+        );
 
-        event.getBranch().ifPresent(b -> sj.add("branch=" + b));
-        if (!event.getBranch().isPresent()) sj.add("branch=-");
+        event.getBranch().ifPresentOrElse(
+                b -> sj.add("branch=" + b),
+                () -> sj.add("branch=-")
+        );
 
-        event.getShaShort().ifPresent(s -> sj.add("sha=" + s));
-        if (!event.getShaShort().isPresent()) sj.add("sha=-");
+        event.getShaShort().ifPresentOrElse(
+                sha -> sj.add("sha=" +sha),
+                () -> sj.add("sha=-")
+        );
 
-        event.getStatus().ifPresent(st -> sj.add("status=" + st));
-        if (!event.getStatus().isPresent()) sj.add("status=-");
+        event.getStatus().ifPresentOrElse(
+                st -> sj.add("status=" + st),
+                () -> sj.add("status=-")
+        );
 
-        event.getMessage().ifPresent(m -> sj.add("msg=\"" + escape(m) + "\""));
-        if (!event.getMessage().isPresent()) sj.add("msg=-");
+        event.getMessage().ifPresentOrElse(
+                msg -> sj.add("msg=\"" + escape(msg) + "\""),
+                () -> sj.add("msg=-")
+        );
 
         System.out.println(sj.toString());
+
     }
 
     private String escape(String s) {
