@@ -38,16 +38,17 @@ public class Main {
         StateStore store = new StateStore(repoArg);
         EventEmitter emitter = new EventEmitter();
 
-        MonitorEngine engine = new MonitorEngine(
-                client,
-                store,
-                emitter,
-                owner,
-                repo,
-                5000
-        );
+//        MonitorEngine engine = new MonitorEngine(
+//                client,
+//                store,
+//                emitter,
+//                owner,
+//                repo,
+//                5000,
+//
+//        );
 
-        engine.start();
+//        engine.start();
 
     }
 }

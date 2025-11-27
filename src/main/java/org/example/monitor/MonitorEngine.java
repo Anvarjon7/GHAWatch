@@ -2,23 +2,29 @@ package org.example.monitor;
 
 import lombok.AllArgsConstructor;
 import org.example.github.GitHubClient;
-import org.example.github.model.WorkflowRun;
-import org.example.github.model.WorkflowRunsResponse;
+import org.example.github.exception.GithubApiException;
+import org.example.github.exception.RateLimitException;
+import org.example.github.model.*;
+import org.example.monitor.backoff.BackOffStrategy;
 import org.example.monitor.state.JobSnapshot;
 import org.example.monitor.state.RunSnapshot;
 import org.example.monitor.state.StepSnapshot;
 import org.example.state.MonitorState;
 import org.example.state.StateStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-@AllArgsConstructor
 public class MonitorEngine {
+
+    private static final Logger log = LoggerFactory.getLogger(MonitorEngine.class);
 
     private final GitHubClient client;
     private final StateStore stateStore;
@@ -26,60 +32,108 @@ public class MonitorEngine {
     private final String owner;
     private final String repo;
     private final long pollIntervalMillis;
+    private final BackOffStrategy backOff;
+
+    public MonitorEngine(GitHubClient client,
+                         StateStore stateStore,
+                         EventEmitter emitter,
+                         String owner,
+                         String repo,
+                         long pollIntervalMillis,
+                         BackOffStrategy backOff) {
+        this.client = client;
+        this.stateStore = stateStore;
+        this.emitter = emitter;
+        this.owner = owner;
+        this.repo = repo;
+        this.pollIntervalMillis = pollIntervalMillis;
+        this.backOff = new BackOffStrategy(60);
+    }
 
     private final AtomicBoolean running = new AtomicBoolean(true);
 
-    public void start(){
+    public void start() {
 
         System.out.println("Starting monitoring for " + owner + "/" + repo + "......");
 
         MonitorState state = stateStore.load();
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            System.out.println("Shutdown requested..");
+            log.info("Shutdown requested..");
             running.set(false);
         }));
 
-        while (running.get()){
+        while (running.get()) {
             try {
+                log.info("[poll] starting poll cycle");
                 pollOnce(state);
-                Thread.sleep(pollIntervalMillis);
-            }catch (InterruptedException e){
-                System.out.println("interrupted. Shutting down...");
-                Thread.currentThread().interrupt();
-                break;
+
+                backOff.reset();
+                sleepInterruptibly(pollIntervalMillis);
+
+            } catch (RateLimitException rle) {
+                long waitMs = rle.getRetryAfterMillis();
+                log.warn("Rate limited by Github. Sleeping {} ms." +waitMs);
+                sleepInterruptibly(waitMs);
+            } catch (GithubApiException ghe) {
+                int delaySec = backOff.nextDelay();
+                log.warn("Github APi error: {}. Backing off {}s and retrying.", ghe.getMessage(),delaySec);
+                sleepInterruptibly(delaySec + 1000L);
             }catch (Exception e){
-                System.err.println("Error during polling: " + e.getMessage());
+                int delaySec = backOff.nextDelay();
+                log.error("Unexpected error during polling: {}. Backing off {}s.", e.getMessage(),delaySec);
             }
         }
+
+        try {
+            stateStore.save(state);
+            log.info("Final state saved.");
+        }catch (Exception e){
+            log.error("Failed to save final state: {}", e.getMessage());
+        }
+
+        log.info("Monitor stopped");
     }
 
     private void pollOnce(MonitorState state) throws IOException {
         WorkflowRunsResponse runsResponse =
-                client.listWorkflowRuns(owner,repo);
+                client.listWorkflowRuns(owner, repo);
 
-        List<WorkflowRun> runs = runsResponse.getWorkflowRuns();
-        if (runs==null || runs.isEmpty()){
+        List<WorkflowRun> runs = runsResponse == null ? null : runsResponse.getWorkflowRuns();
+        if (runs == null || runs.isEmpty()) {
+            log.debug("[poll] no runs returned");
             return;
         }
 
-        runs.sort(Comparator.comparing(WorkflowRun::getId));
+        runs.sort((a,b) -> Long.compare(a.getId(),b.getId()));
 
-        for (WorkflowRun run : runs){
+        long maxSeenRunId = state.getLastProcessedRunId();
+
+        for (WorkflowRun run : runs) {
             long runId = run.getId();
 
-            if (runId <= state.getLastProcessedRunId()){
+            if (runId <= state.getLastProcessedRunId()) {
                 continue;
             }
 
-            processRunWithSnapshot(run,state);
+            try {
+                processRunWithSnapshot(run,state);
+            }catch (RateLimitException | GithubApiException e){
+                throw e;
+            }catch (Exception e){
+                log.error("Error processing run {}: {}", runId, e.getMessage());
+            }
 
-            state.setLastProcessedRunId(runId);
+            if (runId > maxSeenRunId){
+                maxSeenRunId = runId;
+            }
+
+            state.setLastProcessedRunId(maxSeenRunId);
             stateStore.save(state);
         }
     }
 
-    private void emitRunEvents(WorkflowRun run){
+    private void emitRunEvents(WorkflowRun run) {
 
         String fullRepo = owner + "/" + repo;
         OffsetDateTime now = OffsetDateTime.now();
@@ -98,17 +152,15 @@ public class MonitorEngine {
         ));
     }
 
-    private String shorten(String sha){
-        return sha!= null && sha.length() > 7 ? sha.substring(0,7) : sha;
-    }
-
     private void processRunWithSnapshot(WorkflowRun run, MonitorState state) throws IOException {
         long runId = run.getId();
-        String fullREpo = owner+"/"+repo;
+        String fullREpo = owner + "/" + repo;
 
-        RunSnapshot previous = state.getRunSnapshots().get(runId);
+        Map<Long, RunSnapshot> runSnapshots = state.getRunSnapshots();
 
-        if (previous == null){
+        RunSnapshot previousRunSnapshot = runSnapshots == null ? null : runSnapshots.get(runId);
+
+        if (previousRunSnapshot == null) {
             emitter.emit(new WorkflowEvent(
                     OffsetDateTime.now(),
                     EventType.WORKFLOW_STARTED,
@@ -123,7 +175,7 @@ public class MonitorEngine {
             ));
         }
 
-        if (previous != null && previous.getConclusion() == null && run.getConclusion() != null){
+        if (previousRunSnapshot != null && previousRunSnapshot.getConclusion() == null && run.getConclusion() != null) {
             emitter.emit(new WorkflowEvent(
                     OffsetDateTime.now(),
                     EventType.WORKFLOW_COMPLETED,
@@ -138,101 +190,141 @@ public class MonitorEngine {
             ));
         }
 
-        var jobsResponse = client.listJobsForRun(owner,repo,runId);
-        var currentJobSnapshot = new HashMap<Long, JobSnapshot>();
+        JobsResponse jobsResponse = client.listJobs(owner, repo, runId);
+        List<Job> jobs = jobsResponse == null ? null : jobsResponse.getJobs();
+        if (jobs == null) jobs = List.of();
 
-        for (var job : jobsResponse.getJobs()){
-            JobSnapshot prevJob = previous != null ?
-                    previous.getJobs().get(job.getId()) : null;
+        Map<Long,JobSnapshot> currentJobSnapshots = new HashMap<>();
 
-            if (prevJob == null && job.getStartedAt() != null){
+        for (Job job : jobs) {
+            long jobId = job.getId();
+            JobSnapshot prevJobSnapshot = previousRunSnapshot != null
+                    && previousRunSnapshot.getJobs() != null ? previousRunSnapshot.getJobs().get(jobId) : null;
+
+            boolean jobStartedNow = (prevJobSnapshot == null) && (job.getStartedAt() != null || "in_progress".equalsIgnoreCase(job.getStatus()));
+            if (jobStartedNow) {
                 emitter.emit(new WorkflowEvent(
                         OffsetDateTime.now(),
                         EventType.JOB_STARTED,
                         fullREpo,
                         runId,
-                        job.getId(),
+                        jobId,
                         null,
                         run.getHeadBranch(),
                         shorten(run.getHeadSha()),
                         job.getStatus(),
-                        "Job started: " + job.getName()
+                        "Job started: " + safeString(job.getName())
                 ));
             }
 
-            if (prevJob != null && prevJob.getConclusion() == null && job.getConclusion() != null){
+            boolean jobCompletedNow = (prevJobSnapshot == null && job.getConclusion() != null)
+                    || (prevJobSnapshot != null && prevJobSnapshot.getConclusion() == null && job.getConclusion() != null);
+            if (jobCompletedNow) {
                 emitter.emit(new WorkflowEvent(
                         OffsetDateTime.now(),
                         EventType.JOB_COMPLETED,
                         fullREpo,
                         runId,
-                        job.getId(),
+                        jobId,
                         null,
                         run.getHeadBranch(),
                         shorten(run.getHeadSha()),
                         job.getConclusion(),
-                        "Job completed: " + job.getName()
+                        "Job completed: " + safeString(job.getName())
                 ));
             }
 
-            var steps = job.getSteps();
-            var currentStepSnapshots = new HashMap<Integer, StepSnapshot>();
+            List<Step> steps = job.getSteps();
+            Map<Integer, StepSnapshot> currentStepSnapshots = new HashMap<>();
 
-            if (steps != null){
-                for (var step : steps){
-                    StepSnapshot prevStep = prevJob!=null ? prevJob.getSteps().get(step.getNumber()):null;
+            if (steps != null && !steps.isEmpty()) {
+                for (Step step : steps) {
+                    int stepNumber = step.getNumber();
+                    StepSnapshot prevStep = prevJobSnapshot != null && prevJobSnapshot.getSteps() != null
+                            ? prevJobSnapshot.getSteps().get(stepNumber)
+                            : null;
 
-                    if (prevStep == null && step.getStartedAt() != null){
+                    boolean stepStartedNow = (prevStep == null) && (step.getStartedAt() != null || "in_progress".equalsIgnoreCase(step.getStatus()));
+
+                    if (stepStartedNow) {
                         emitter.emit(new WorkflowEvent(
                                 OffsetDateTime.now(),
                                 EventType.STEP_STARTED,
                                 fullREpo,
                                 runId,
-                                job.getId(),
-                                step.getNumber(),
+                                jobId,
+                                stepNumber,
                                 run.getHeadBranch(),
                                 shorten(run.getHeadSha()),
                                 step.getStatus(),
-                                "Step started: " +step.getName()
-                        ));
-                    }
-
-                    if (prevStep != null && prevStep.getConclusion() == null && step.getConclusion() != null){
-                        emitter.emit(new WorkflowEvent(
-                                OffsetDateTime.now(),
-                                EventType.STEP_COMPLETED,
-                                fullREpo,
-                                runId,
-                                job.getId(),
-                                step.getNumber(),
-                                run.getHeadBranch(),
-                                shorten(run.getHeadSha()),
-                                step.getConclusion(),
-                                "Step completed: " + step.getName()
+                                "Step started: " + safeString(step.getName())
                         ));
 
-                        currentStepSnapshots.put(step.getNumber(), new StepSnapshot(
-                                step.getNumber(),
-                                step.getStatus(),
-                                step.getConclusion()
-                        ));
+                        boolean stepCompletedNow = (prevStep == null && step.getConclusion() != null)
+                                || (prevStep != null && prevStep.getConclusion() == null && step.getConclusion() != null);
+
+                        if (stepCompletedNow) {
+                            emitter.emit(new WorkflowEvent(
+                                    OffsetDateTime.now(),
+                                    EventType.STEP_COMPLETED,
+                                    fullREpo,
+                                    runId,
+                                    job.getId(),
+                                    step.getNumber(),
+                                    run.getHeadBranch(),
+                                    shorten(run.getHeadSha()),
+                                    step.getConclusion(),
+                                    "Step completed: " + safeString(step.getName())
+                            ));
+                        }
+                        currentStepSnapshots.put(stepNumber, new StepSnapshot(stepNumber, step.getStatus(), step.getConclusion()));
                     }
                 }
 
-                currentJobSnapshot.put(job.getId(),new JobSnapshot(
-                        job.getId(),
-                        job.getStatus(),
-                        job.getConclusion(),
-                        currentStepSnapshots
-                ));
+                currentJobSnapshots.put(jobId, new JobSnapshot(jobId, job.getStatus(), job.getConclusion(), currentStepSnapshots));
             }
 
-            state.updateSnapshot(runId, new RunSnapshot(
-                    runId,
-                    run.getStatus(),
-                    run.getConclusion(),
-                    currentJobSnapshot
-            ));
+            RunSnapshot newRunSnapshot = new RunSnapshot(runId, run.getStatus(), run.getConclusion(), currentJobSnapshots);
+
+            boolean allJobsFinished = currentJobSnapshots.values().stream()
+                    .allMatch(j -> j.getConclusion() != null);
+
+            if (run.getConclusion() != null && allJobsFinished) {
+                if (state.getRunSnapshots() != null) {
+                    state.getRunSnapshots().remove(runId);
+                }
+            } else {
+                if (state.getRunSnapshots() == null) {
+                    state.setRunSnapshots(new HashMap<>());
+                }
+                state.getRunSnapshots().put(runId, newRunSnapshot);
+            }
+            stateStore.save(state);
+        }
+
+
+    }
+
+    private String shorten(String sha) {
+        return sha != null && sha.length() > 7 ? sha.substring(0, 7) : sha;
+    }
+
+    private String safeString(String s){
+        return s == null ? "-" : s;
+    }
+
+    private void sleepInterruptibly(long millis){
+        try{
+            long slept = 0;
+            final long chunk = 1000L;
+            while (running.get() && slept < millis){
+                long toSleep =Math.min(chunk,millis-slept);
+                Thread.sleep(toSleep);
+                slept+=toSleep;
+            }
+        }catch (InterruptedException e){
+            Thread.currentThread().interrupt();
+            running.set(false);
         }
     }
 }

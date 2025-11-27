@@ -19,7 +19,8 @@ public class MonitorState {
     @JsonProperty("last_processed_run_id")
     private long lastProcessedRunId;
 
-    private Map<Long, RunSnapshot> runSnapshots = new HashMap<>();
+    private Map<Long, RunSnapshot> runSnapshots;
+
     public MonitorState(long lastProcessedRunId) {
         this.lastProcessedRunId = lastProcessedRunId;
     }

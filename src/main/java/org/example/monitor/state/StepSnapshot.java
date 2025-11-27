@@ -8,6 +8,6 @@ import lombok.Getter;
 public class StepSnapshot {
 
     private final int number;
-    private final String string;
+    private final String status;
     private final String conclusion;
 }
