@@ -39,8 +39,7 @@ public class MonitorEngine {
                          EventEmitter emitter,
                          String owner,
                          String repo,
-                         long pollIntervalMillis,
-                         BackOffStrategy backOff) {
+                         long pollIntervalMillis) {
         this.client = client;
         this.stateStore = stateStore;
         this.emitter = emitter;
