@@ -22,6 +22,8 @@ public class Main implements Callable<Integer> {
 
     private static final Logger log = LoggerFactory.getLogger(Main.class);
 
+    @CommandLine.Parameters(index = "0", paramLabel = "<owner/repo>",
+            description = "Repository in the form owner/repo")
     private String repoArg;
 
     @CommandLine.Option(names = {"--token"}, description = "Github personal access token (overrides GITHUB_TOKEN env)")
