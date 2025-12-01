@@ -7,6 +7,9 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 
 public class StateStore {
 
@@ -52,19 +55,21 @@ public class StateStore {
         }
     }
 
-    public void save(MonitorState state) {
-        File tempFile = new File(stateFile.getAbsolutePath() + ".tmp");
-
+    public synchronized void save(MonitorState state) {
         try {
-            mapper.writeValue(tempFile, state);
-
-            if (tempFile.renameTo(stateFile)) {
-                log.info("State saved: {}", state.getLastProcessedRunId());
-            } else {
-                throw new IOException("Failed to rename temp file");
+            Path dir = stateFile.getParentFile().toPath();
+            if (!Files.exists(dir)) {
+                Files.createDirectories(dir);
             }
-        } catch (Exception e) {
-            log.error("Failed to write state to file", e);
+
+            Path tempFile = Files.createTempFile(dir, "state-", ".json");
+            mapper.writerWithDefaultPrettyPrinter().writeValue(tempFile.toFile(), state);
+
+            Files.move(tempFile, stateFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            log.info("State saved: {}", state.getLastProcessedRunId());
+
+        } catch (IOException e) {
+            log.error("Failed to save state file", e);
         }
     }
 }

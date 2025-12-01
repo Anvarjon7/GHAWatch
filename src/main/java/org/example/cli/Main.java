@@ -1,7 +1,7 @@
-package org.example;
+package org.example.cli;
 
+import org.example.event.EventEmitter;
 import org.example.github.GitHubClient;
-import org.example.monitor.EventEmitter;
 import org.example.monitor.MonitorEngine;
 import org.example.state.MonitorState;
 import org.example.state.StateStore;
@@ -28,9 +28,11 @@ public class Main implements Callable<Integer> {
 
     @CommandLine.Option(names = {"--token"}, description = "Github personal access token (overrides GITHUB_TOKEN env)")
     private String tokenOpt;
-    @CommandLine.Option(names = {"--interval"}, description = "Polling interval in seconds (default: ${DEFAULT-VALUE})", defaultValue = "10")
-    private String stateFileOpt;
+
     @CommandLine.Option(names = {"--state"}, description = "Path to the state file (default: ~/.gha-watch/<owner>/<repo>/state.json)")
+    private String stateFileOpt;
+    @CommandLine.Option(names = {"--interval"}, description = "Polling interval in seconds (default: ${DEFAULT-VALUE})", defaultValue = "10")
+
     private int intervalSeconds;
     @CommandLine.Option(names = {"--verbose"}, description = "Enable verbose (DEBUG) logging")
     private boolean verbose;
@@ -113,7 +115,7 @@ public class Main implements Callable<Integer> {
 
     private String resolveToken(String tokenOpt) {
         if (tokenOpt != null && !tokenOpt.isBlank()) return tokenOpt;
-        String env = System.getenv("GITHUB TOKEN");
+        String env = System.getenv("GITHUB_TOKEN");
         if (env != null && !env.isBlank()) return env;
         String env2 = System.getenv("GH_TOKEN");
         if (env2 != null && !env2.isBlank()) return env2;

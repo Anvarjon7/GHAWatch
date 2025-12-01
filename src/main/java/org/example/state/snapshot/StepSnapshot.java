@@ -1,4 +1,4 @@
-package org.example.monitor.state;
+package org.example.state.snapshot;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;

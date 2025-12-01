@@ -1,4 +1,4 @@
-package org.example.monitor;
+package org.example.event;
 
 public enum EventType {
 

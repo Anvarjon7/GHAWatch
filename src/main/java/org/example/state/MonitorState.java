@@ -5,9 +5,8 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.example.monitor.state.RunSnapshot;
+import org.example.state.snapshot.RunSnapshot;
 
-import java.util.HashMap;
 import java.util.Map;
 
 @NoArgsConstructor
@@ -25,7 +24,7 @@ public class MonitorState {
         this.lastProcessedRunId = lastProcessedRunId;
     }
 
-   public void updateSnapshot(long runId, RunSnapshot snapshot){
-        runSnapshots.put(runId,snapshot);
-   }
+    public void updateSnapshot(long runId, RunSnapshot snapshot) {
+        runSnapshots.put(runId, snapshot);
+    }
 }

@@ -1,22 +1,23 @@
 package org.example.monitor;
 
-import lombok.AllArgsConstructor;
+import org.example.event.EventEmitter;
+import org.example.event.EventType;
+import org.example.event.WorkflowEvent;
 import org.example.github.GitHubClient;
 import org.example.github.exception.GithubApiException;
 import org.example.github.exception.RateLimitException;
 import org.example.github.model.*;
 import org.example.monitor.backoff.BackOffStrategy;
-import org.example.monitor.state.JobSnapshot;
-import org.example.monitor.state.RunSnapshot;
-import org.example.monitor.state.StepSnapshot;
 import org.example.state.MonitorState;
 import org.example.state.StateStore;
+import org.example.state.snapshot.JobSnapshot;
+import org.example.state.snapshot.RunSnapshot;
+import org.example.state.snapshot.StepSnapshot;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.time.OffsetDateTime;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -72,22 +73,22 @@ public class MonitorEngine {
 
             } catch (RateLimitException rle) {
                 long waitMs = rle.getRetryAfterMillis();
-                log.warn("Rate limited by Github. Sleeping {} ms." +waitMs);
+                log.warn("Rate limited by Github. Sleeping {} ms." + waitMs);
                 sleepInterruptibly(waitMs);
             } catch (GithubApiException ghe) {
                 int delaySec = backOff.nextDelay();
-                log.warn("Github APi error: {}. Backing off {}s and retrying.", ghe.getMessage(),delaySec);
+                log.warn("Github APi error: {}. Backing off {}s and retrying.", ghe.getMessage(), delaySec);
                 sleepInterruptibly(delaySec + 1000L);
-            }catch (Exception e){
+            } catch (Exception e) {
                 int delaySec = backOff.nextDelay();
-                log.error("Unexpected error during polling: {}. Backing off {}s.", e.getMessage(),delaySec);
+                log.error("Unexpected error during polling: {}. Backing off {}s.", e.getMessage(), delaySec);
             }
         }
 
         try {
             stateStore.save(state);
             log.info("Final state saved.");
-        }catch (Exception e){
+        } catch (Exception e) {
             log.error("Failed to save final state: {}", e.getMessage());
         }
 
@@ -104,7 +105,7 @@ public class MonitorEngine {
             return;
         }
 
-        runs.sort((a,b) -> Long.compare(a.getId(),b.getId()));
+        runs.sort((a, b) -> Long.compare(a.getId(), b.getId()));
 
         long maxSeenRunId = state.getLastProcessedRunId();
 
@@ -116,14 +117,14 @@ public class MonitorEngine {
             }
 
             try {
-                processRunWithSnapshot(run,state);
-            }catch (RateLimitException | GithubApiException e){
+                processRunWithSnapshot(run, state);
+            } catch (RateLimitException | GithubApiException e) {
                 throw e;
-            }catch (Exception e){
+            } catch (Exception e) {
                 log.error("Error processing run {}: {}", runId, e.getMessage());
             }
 
-            if (runId > maxSeenRunId){
+            if (runId > maxSeenRunId) {
                 maxSeenRunId = runId;
             }
 
@@ -193,7 +194,7 @@ public class MonitorEngine {
         List<Job> jobs = jobsResponse == null ? null : jobsResponse.getJobs();
         if (jobs == null) jobs = List.of();
 
-        Map<Long,JobSnapshot> currentJobSnapshots = new HashMap<>();
+        Map<Long, JobSnapshot> currentJobSnapshots = new HashMap<>();
 
         for (Job job : jobs) {
             long jobId = job.getId();
@@ -308,20 +309,20 @@ public class MonitorEngine {
         return sha != null && sha.length() > 7 ? sha.substring(0, 7) : sha;
     }
 
-    private String safeString(String s){
+    private String safeString(String s) {
         return s == null ? "-" : s;
     }
 
-    private void sleepInterruptibly(long millis){
-        try{
+    private void sleepInterruptibly(long millis) {
+        try {
             long slept = 0;
             final long chunk = 1000L;
-            while (running.get() && slept < millis){
-                long toSleep =Math.min(chunk,millis-slept);
+            while (running.get() && slept < millis) {
+                long toSleep = Math.min(chunk, millis - slept);
                 Thread.sleep(toSleep);
-                slept+=toSleep;
+                slept += toSleep;
             }
-        }catch (InterruptedException e){
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             running.set(false);
         }

@@ -1,4 +1,4 @@
-package org.example.monitor;
+package org.example.event;
 
 import java.time.format.DateTimeFormatter;
 import java.util.StringJoiner;
@@ -7,7 +7,7 @@ public class EventEmitter {
 
     private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
 
-    public synchronized void emit(WorkflowEvent event){
+    public synchronized void emit(WorkflowEvent event) {
 
         StringJoiner sj = new StringJoiner(" | ");
 
@@ -23,7 +23,7 @@ public class EventEmitter {
         );
 
         event.getStepNumber().ifPresentOrElse(
-                step -> sj.add("step=" +step),
+                step -> sj.add("step=" + step),
                 () -> sj.add("step=-")
         );
 
@@ -33,7 +33,7 @@ public class EventEmitter {
         );
 
         event.getShaShort().ifPresentOrElse(
-                sha -> sj.add("sha=" +sha),
+                sha -> sj.add("sha=" + sha),
                 () -> sj.add("sha=-")
         );
 

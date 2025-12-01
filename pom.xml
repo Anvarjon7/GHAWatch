@@ -90,7 +90,7 @@
                     </descriptorRefs>
                     <archive>
                         <manifest>
-                            <mainClass>org.example.Main</mainClass>
+                            <mainClass>org.example.cli.Main</mainClass>
                         </manifest>
                     </archive>
                 </configuration>
